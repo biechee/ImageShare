@@ -1,70 +1,258 @@
-# Getting Started with Create React App
+# ImageShare
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Firebase
+在Firebase中新增專案並且更改Firebase storage和Firestore database兩者的規則
 
-## Available Scripts
+## 前端部分（React）
+1. 設置React項目
 
-In the project directory, you can run:
+cmd
+```
+npx create-react-app image-share-frontend
+cd image-share-frontend
+npm install axios
+```
 
-### `npm start`
+在 src 目錄中創建 firebase.js 文件，並添加以下代碼：
+```
+import firebase from 'firebase/app';
+import 'firebase/storage';
+import 'firebase/firestore';
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+firebase.initializeApp(firebaseConfig);
 
-### `npm test`
+const storage = firebase.storage();
+const firestore = firebase.firestore();
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+export { storage, firestore, firebase as default };
 
-### `npm run build`
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+2.  創建圖片上傳和顯示功能
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+在src目錄中創建components資料夾，並創建ImageUpload.js和ImageList.js
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+ImageUpload.js
+```javascript
+import React, { useState } from 'react';
+import { storage, firestore } from '../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc } from 'firebase/firestore';
 
-### `npm run eject`
+const ImageUpload = () => {
+    const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
+    const [image, setImage] = useState(null);
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+    const handleSubmit = async (e) => {
+        e.preventDefault();
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+        if (!image) {
+            alert('Please select an image to upload.');
+            return;
+        }
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+        console.log('Uploading image:', image);
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+        const storageRef = ref(storage, `images/${image.name}`);
+        const uploadTask = uploadBytesResumable(storageRef, image);
 
-## Learn More
+        uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+                console.log('Upload progress:', snapshot.bytesTransferred, '/', snapshot.totalBytes);
+            },
+            (error) => {
+                console.error('Error uploading image', error);
+            },
+            async () => {
+                try {
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    console.log('Image uploaded, download URL:', downloadURL);
+                    await addDoc(collection(firestore, 'images'), {
+                        title,
+                        description,
+                        image: downloadURL,
+                        uploadedAt: new Date()
+                    });
+                    alert('Image uploaded successfully!');
+                    setTitle('');
+                    setDescription('');
+                    setImage(null);
+                } catch (error) {
+                    console.error('Error adding document', error);
+                }
+            }
+        );
+    };
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+    return (
+        <form onSubmit={handleSubmit}>
+            <div>
+                <label>Title:</label>
+                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </div>
+            <div>
+                <label>Description:</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} required />
+            </div>
+            <div>
+                <label>Image:</label>
+                <input type="file" onChange={(e) => setImage(e.target.files[0])} required />
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+    );
+};
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+export default ImageUpload;
 
-### Code Splitting
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
 
-### Analyzing the Bundle Size
+ImageList.js
+```javascript
+import React, { useEffect, useState } from 'react';
+import { firestore } from '../firebase';
+import { collection, getDocs } from 'firebase/firestore';
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+const ImageList = () => {
+    const [images, setImages] = useState([]);
 
-### Making a Progressive Web App
+    useEffect(() => {
+        const fetchImages = async () => {
+            try {
+                const querySnapshot = await getDocs(collection(firestore, 'images'));
+                const imagesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log('Fetched images:', imagesData); // 調試用
+                setImages(imagesData);
+            } catch (error) {
+                console.error('Error fetching images:', error);
+            }
+        };
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+        fetchImages();
+    }, []);
 
-### Advanced Configuration
+    return (
+        <div>
+            <h2>Uploaded Images</h2>
+            {images.length > 0 ? (
+                images.map((image, index) => (
+                    <div key={index}>
+                        <h3>{image.title}</h3>
+                        <p>{image.description}</p>
+                        <img src={image.image} alt={image.title} width="300" />
+                    </div>
+                ))
+            ) : (
+                <p>No images uploaded yet.</p>
+            )}
+        </div>
+    );
+};
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+export default ImageList;
 
-### Deployment
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+```
 
-### `npm run build` fails to minify
+App.js
+```javascript
+import React from 'react';
+import ImageUpload from './components/ImageUpload';
+import ImageList from './components/ImageList';
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+const App = () => {
+    return (
+        <div>
+            <h1>Image Share</h1>
+            <ImageUpload />
+            <ImageList />
+        </div>
+    );
+};
+
+export default App;
+
+```
+
+## 串接Firebase資料庫
+React中安裝firebase
+
+```
+npm install firebase
+```
+
+在src資料夾新增firebase.js
+
+firebase.js
+```javascript
+// Import the functions you need from the SDKs you need
+import { initializeApp } from 'firebase/app';
+import { getStorage } from 'firebase/storage';
+import { getFirestore } from 'firebase/firestore';
+
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+    apiKey: "API_KEY",
+    authDomain: "AUTH_DOMAIN",
+    projectId: "PROJECT_ID",
+    storageBucket: "STORAGE_BUCKET",
+    messagingSenderId: "MESSAGING_SENDER_ID",
+    appId: "APP_ID",
+    measurementId: "MEASUREMENT_ID"
+};
+
+// Initialize Firebase
+// 初始化 Firebase 應用
+const app = initializeApp(firebaseConfig);
+
+// 獲取存儲和 Firestore 服務
+const storage = getStorage(app);
+const firestore = getFirestore(app);
+
+export { storage, firestore };
+```
+
+更新 App.js
+確保在 App.js 中正確引入並使用 ImageUpload 和 ImageList
+
+App.js
+```javascript
+import React from 'react';
+import ImageUpload from './components/ImageUpload';
+import ImageList from './components/ImageList';
+
+const App = () => {
+    return (
+        <div>
+            <h1>Image Share</h1>
+            <ImageUpload />
+            <ImageList />
+        </div>
+    );
+};
+
+export default App;
+
+```
+
+## 運作 React 伺服
+```
+npm start
+```
+
